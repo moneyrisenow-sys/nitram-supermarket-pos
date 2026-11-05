@@ -1,0 +1,53 @@
+name: Build NITRAM Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Extract NITRAM source package
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:GITHUB_WORKSPACE "NITRAM_SUPERMARKET_GITHUB_WINDOWS_BUILD_KIT.zip"
+          if (-not (Test-Path $archive)) {
+            throw "Build kit ZIP was not found in the repository root."
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:GITHUB_WORKSPACE -Force
+          $project = Join-Path $env:GITHUB_WORKSPACE "NITRAM_TAURI_SQLITE_PROJECT"
+          if (-not (Test-Path (Join-Path $project "src-tauri/Cargo.toml"))) {
+            throw "The extracted Tauri project is incomplete: src-tauri/Cargo.toml is missing."
+          }
+          if (-not (Test-Path (Join-Path $project "dist/index.html"))) {
+            throw "The extracted frontend is incomplete: dist/index.html is missing."
+          }
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build Windows installers
+        shell: pwsh
+        working-directory: NITRAM_TAURI_SQLITE_PROJECT/src-tauri
+        run: cargo tauri build
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: NITRAM-Windows-Installers
+          path: |
+            NITRAM_TAURI_SQLITE_PROJECT/src-tauri/target/release/bundle/nsis/*.exe
+            NITRAM_TAURI_SQLITE_PROJECT/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14
