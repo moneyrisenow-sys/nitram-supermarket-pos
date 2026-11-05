@@ -14,7 +14,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Extract NITRAM source package
+      - name: Extract and validate NITRAM source package
         shell: pwsh
         run: |
           $archive = Join-Path $env:GITHUB_WORKSPACE "NITRAM_SUPERMARKET_GITHUB_WINDOWS_BUILD_KIT.zip"
@@ -28,6 +28,21 @@ jobs:
           }
           if (-not (Test-Path (Join-Path $project "dist/index.html"))) {
             throw "The extracted frontend is incomplete: dist/index.html is missing."
+          }
+
+      - name: Repair malformed newline in desktop storage bridge
+        shell: pwsh
+        run: |
+          $htmlPath = Join-Path $env:GITHUB_WORKSPACE "NITRAM_TAURI_SQLITE_PROJECT/dist/index.html"
+          $html = Get-Content -LiteralPath $htmlPath -Raw
+          $bad = '},\n      reset(){request(''DELETE'',''/state'');},'
+          $good = "},`n      reset(){request('DELETE','/state');},"
+          if ($html.Contains($bad)) {
+            $html = $html.Replace($bad, $good)
+            Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
+          }
+          if ($html.Contains('},\n      reset()')) {
+            throw "Storage bridge still contains an invalid escaped newline."
           }
 
       - name: Install Rust stable
