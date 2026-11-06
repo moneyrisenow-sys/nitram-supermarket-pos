@@ -8,7 +8,7 @@ fn print_receipt(text:String)->Result<String,String>{
   use std::{ffi::c_void,ptr::null_mut};
   type PrinterHandle=*mut c_void;
   #[repr(C)] struct DocInfo1W { pDocName:*mut u16, pOutputFile:*mut u16, pDatatype:*mut u16 }
-  #[link(name="winspool.drv")]
+  #[link(name="winspool")]
   unsafe extern "system" {
    fn GetDefaultPrinterW(name:*mut u16, needed:*mut u32)->i32;
    fn OpenPrinterW(name:*const u16, handle:*mut PrinterHandle, defaults:*mut c_void)->i32;
