@@ -55,7 +55,7 @@ jobs:
           $oldHeaders = '.with_headers(headers.drain(..))'
           $newHeaders = '.pipe_headers_placeholder'
           if ($source.Contains($oldHeaders)) {
-            $source = $source.Replace($oldHeaders, '.with_header(headers.remove(0))')
+            $source = $source.Replace($oldHeaders, '; let response = headers.into_iter().fold(Response::from_string(body).with_status_code(code), |r,h| r.with_header(h)); let _=req.respond(response); //')
           }
           $badJson = '"{\\"ok\\":true}"'
           $goodJson = 'r#"{"ok":true}"#'
