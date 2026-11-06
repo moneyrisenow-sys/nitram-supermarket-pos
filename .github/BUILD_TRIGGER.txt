@@ -1,1 +1,2 @@
-Trigger corrected NITRAM Windows installer build after fixing Winspool import library name.
+NITRAM receipt formatting and auto-close rebuild trigger
+Build after commit 6088bb545a2ca7e4547df90162fee02c014326c2
