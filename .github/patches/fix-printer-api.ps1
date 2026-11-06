@@ -26,7 +26,20 @@ fn print_receipt(text:String)->Result<String,String>{
   let doc:Vec<u16>="NITRAM Sales Receipt\0".encode_utf16().collect();let raw:Vec<u16>="RAW\0".encode_utf16().collect();
   let info=DocInfo1W{pDocName:doc.as_ptr() as *mut u16,pOutputFile:null_mut(),pDatatype:raw.as_ptr() as *mut u16};
   let job=unsafe{StartDocPrinterW(printer,1,&info as *const _ as *const c_void)};if job==0{unsafe{ClosePrinter(printer)};return Err("Windows could not start the raw print job.".into())}
-  let mut bytes=vec![0x1b,0x40];let safe:String=text.chars().map(|c|if c.is_ascii(){c}else{'?'}).collect();bytes.extend_from_slice(safe.as_bytes());bytes.extend_from_slice(&[10,10,10,10]);
+  // Render the receipt with ESC/POS alignment and emphasis instead of plain unformatted text.
+  let safe:String=text.chars().map(|c|if c.is_ascii(){c}else{'?'}).collect();
+  let mut bytes=vec![0x1b,0x40,0x1b,0x4d,0x00];
+  for raw_line in safe.lines(){
+   let mut line=raw_line;
+   let mut centered=false;let mut bold=false;
+   loop { if let Some(rest)=line.strip_prefix("[C]"){centered=true;line=rest;continue}
+          if let Some(rest)=line.strip_prefix("[B]"){bold=true;line=rest;continue}
+          if let Some(rest)=line.strip_prefix("[L]"){line=rest;continue}
+          break; }
+   bytes.extend_from_slice(&[0x1b,0x61,if centered{1}else{0},0x1b,0x45,if bold{1}else{0}]);
+   bytes.extend_from_slice(line.as_bytes());bytes.push(0x0a);
+  }
+  bytes.extend_from_slice(&[0x1b,0x45,0,0x1b,0x61,0,10,10,10]);
   let mut written=0u32;let page=unsafe{StartPagePrinter(printer)}!=0;let ok=page&&unsafe{WritePrinter(printer,bytes.as_ptr() as *const c_void,bytes.len() as u32,&mut written)}!=0;
   if page{unsafe{EndPagePrinter(printer);}}unsafe{EndDocPrinter(printer);ClosePrinter(printer);}
   if !ok||written as usize!=bytes.len(){return Err("Printer did not accept the complete receipt. Check paper and connection.".into())}
