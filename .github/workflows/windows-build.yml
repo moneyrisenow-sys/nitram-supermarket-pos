@@ -90,6 +90,10 @@ jobs:
           }
           Set-Content -LiteralPath $mainPath -Value $source -NoNewline -Encoding utf8
 
+      - name: Apply receipt, barcode and responsiveness fixes
+        shell: pwsh
+        run: .github/patches/apply-runtime-fixes.ps1
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
