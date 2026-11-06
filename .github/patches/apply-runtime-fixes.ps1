@@ -28,7 +28,7 @@ const save=()=>{try{if(_nitramSaveTimer)clearTimeout(_nitramSaveTimer);window.NI
 window.addEventListener('beforeunload',()=>{try{if(_nitramSaveTimer)clearTimeout(_nitramSaveTimer);const x=new XMLHttpRequest();x.open('POST',window.NITRAM_STORAGE.endpoint+'/state',false);x.setRequestHeader('Authorization','Bearer '+window.NITRAM_STORAGE.token);x.setRequestHeader('Content-Type','application/json');x.send(JSON.stringify(S))}catch(e){console.error('Final save failed',e)}});
 const prod=id=>S.products.find(p=>p.id===id);
 '@
-$a=$app.IndexOf('let _nitramSaveRevision=0,');$b=$app.IndexOf('// Persist the compacted live catalogue',$a);if($a -lt 0 -or $b -lt 0){throw 'Save patch markers missing'};$app=$app.Substring(0,$a)+$save+$app.Substring($b)
+$a=$app.IndexOf('let _nitramSaveRevision=0;');$b=$app.IndexOf('// Persist the compacted live catalogue',$a);if($a -lt 0 -or $b -lt 0){throw 'Save patch markers missing'};$app=$app.Substring(0,$a)+$save+$app.Substring($b)
 $receipt=@'
 function receiptPlainText(s){
  const rows=['NITRAM SUPERMARKET','SALES RECEIPT','------------------------------------------','Receipt No: '+(s.receipt||'-'),'Date: '+(s.date||''),'Served by: '+(s.soldBy||'Unknown'),'------------------------------------------'];
