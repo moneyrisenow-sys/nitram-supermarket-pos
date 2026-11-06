@@ -17,7 +17,7 @@ function updateScanSuggestions(){
 '@
 $a=$app.IndexOf('function updateScanSuggestions(){');$b=$app.IndexOf('function chooseScanProduct',$a);if($a -lt 0 -or $b -lt 0){throw 'Barcode patch markers missing'};$app=$app.Substring(0,$a)+$scan+$app.Substring($b)
 $save=@'
-let _nitramSaveRevision=0,_nitramSaveBusy=false,_nitramPendingSave=null,_nitramSaveTimer=null;
+let _nitramSaveRevision=0;_nitramSaveBusy=false,_nitramPendingSave=null,_nitramSaveTimer=null;
 function _nitramFlushSave(){
  if(_nitramSaveBusy||!_nitramPendingSave)return;const payload=_nitramPendingSave;_nitramPendingSave=null;_nitramSaveBusy=true;
  const x=new XMLHttpRequest();x.open('POST',window.NITRAM_STORAGE.endpoint+'/state',true);x.setRequestHeader('Authorization','Bearer '+window.NITRAM_STORAGE.token);x.setRequestHeader('Content-Type','application/json');
