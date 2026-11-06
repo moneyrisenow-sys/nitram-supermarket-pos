@@ -11,7 +11,7 @@ function updateScanSuggestions(){
  for(let i=0;i<products.length&&starts.length<15;i++){const p=products[i],n=String(p.name||'').toLowerCase(),c=String(p.barcode||p.id||'').trim().toLowerCase();if(c.startsWith(q)||n.startsWith(q))starts.push(p)}
  if(starts.length<15){for(let i=0;i<products.length&&starts.length+contains.length<15;i++){const p=products[i],n=String(p.name||'').toLowerCase(),c=String(p.barcode||p.id||'').trim().toLowerCase();if(!n.startsWith(q)&&!c.startsWith(q)&&(n.includes(q)||c.includes(q)))contains.push(p)}}
  scanMatches=starts.concat(contains);
- box.innerHTML=scanMatches.length?scanMatches.map(p=>'<button type="button" class="scan-suggestion" onclick="chooseScanProduct(\\''+escapeScanHtml(p.id)+'\\')" style="width:100%;text-align:left;background:white;border:0;padding:11px 13px;cursor:pointer;border-bottom:1px solid #eef0f3"><b>'+escapeScanHtml(p.name)+'</b><small style="display:block;color:#667085">Barcode: '+escapeScanHtml(p.barcode||p.id)+'</small></button>').join(''):'<div style="padding:12px;color:#667085">No matching products</div>';
+ box.innerHTML=scanMatches.length?scanMatches.map(p=>'<button type="button" class="scan-suggestion" onclick="chooseScanProduct(&quot;'+escapeScanHtml(p.id)+'&quot;)" style="width:100%;text-align:left;background:white;border:0;padding:11px 13px;cursor:pointer;border-bottom:1px solid #eef0f3"><b>'+escapeScanHtml(p.name)+'</b><small style="display:block;color:#667085">Barcode: '+escapeScanHtml(p.barcode||p.id)+'</small></button>').join(''):'<div style="padding:12px;color:#667085">No matching products</div>';
  box.style.display='block';
 }
 '@
