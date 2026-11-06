@@ -47,6 +47,26 @@ jobs:
             throw "Storage bridge still contains an invalid escaped newline."
           }
 
+      - name: Repair Rust storage bridge compile errors
+        shell: pwsh
+        run: |
+          $mainPath = Join-Path $env:GITHUB_WORKSPACE "NITRAM_TAURI_SQLITE_PROJECT/src-tauri/src/main.rs"
+          $source = Get-Content -LiteralPath $mainPath -Raw
+          $oldHeaders = '.with_headers(headers.drain(..))'
+          $newHeaders = '.pipe_headers_placeholder'
+          if ($source.Contains($oldHeaders)) {
+            $source = $source.Replace($oldHeaders, '.with_header(headers.remove(0))')
+          }
+          $badJson = '"{\\"ok\\":true}"'
+          $goodJson = 'r#"{"ok":true}"#'
+          if ($source.Contains($badJson)) {
+            $source = $source.Replace($badJson, $goodJson)
+          }
+          if ($source.Contains('.with_headers(') -or $source.Contains('"{\\"ok\\":true}"')) {
+            throw "Rust storage bridge compile repair did not apply."
+          }
+          Set-Content -LiteralPath $mainPath -Value $source -NoNewline -Encoding utf8
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
