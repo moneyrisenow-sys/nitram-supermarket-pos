@@ -47,6 +47,29 @@ jobs:
             throw "Storage bridge still contains an invalid escaped newline."
           }
 
+      - name: Repair POS navigation and move backup controls into Products
+        shell: pwsh
+        run: |
+          $project = Join-Path $env:GITHUB_WORKSPACE "NITRAM_TAURI_SQLITE_PROJECT"
+          $htmlPath = Join-Path $project "dist/index.html"
+          $html = Get-Content -LiteralPath $htmlPath -Raw
+          $html = [regex]::Replace($html, '(?s)\s*// Simple full-state backup/import for migration and recovery\..*?(?=\s*// Verify server and database before exposing the POS UI\.)', "`n")
+          if ($html.Contains('nitram-export') -or $html.Contains('nitram-import')) { throw "Floating backup controls were not removed." }
+          Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
+
+          $appPath = Join-Path $project "dist/app.js"
+          $app = Get-Content -LiteralPath $appPath -Raw
+          $oldButton = '<button class=btn onclick="productForm()">+ Add Product</button>'
+          $newButtons = '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class=ghost onclick="exportPosData()">Export Backup</button><button class=ghost onclick="document.getElementById(''restoreFile'').click()">Import Backup</button><input id=restoreFile type=file accept="application/json,.json" style="display:none" onchange="restorePosData(event)"><button class=btn onclick="productForm()">+ Add Product</button></div>'
+          if (-not $app.Contains($oldButton)) { throw "Products action button was not found; refusing to alter the POS." }
+          $app = $app.Replace($oldButton, $newButtons)
+          Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+
+          $configPath = Join-Path $project "src-tauri/tauri.conf.json"
+          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          if ($config.app.security) { $config.app.security.PSObject.Properties.Remove('csp') }
+          $config | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $configPath -Encoding utf8
+          Write-Host "Patched desktop event-handler policy and moved backup controls to Products."
       - name: Repair Rust storage bridge compile errors
         shell: pwsh
         run: |
