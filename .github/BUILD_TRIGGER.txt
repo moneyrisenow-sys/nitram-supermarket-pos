@@ -1,0 +1,1 @@
+Trigger corrected NITRAM Windows installer build after fixing Winspool import library name.
