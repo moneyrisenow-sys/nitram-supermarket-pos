@@ -79,51 +79,92 @@ $rust=$rust.Replace('tauri::generate_handler![storage_info]','tauri::generate_ha
 Write-Host 'Applied NITRAM fixes.'
 
 
-# Remove the unsupported [S] marker and add reliable Sales History date presets.
+# Replace the old Sales History date controls with a self-contained, tested row-date filter.
 $htmlPath=Join-Path $project 'dist/index.html'
 $html=Get-Content -LiteralPath $htmlPath -Raw
+$begin=$html.IndexOf('<script>' )
+if($html.Contains('data-nitram-date-presets')){
+  $html=[regex]::Replace($html,'(?s)<script>\s*\(\(\)=>\{.*?data-nitram-date-presets.*?</script>','')
+}
 $dateFilter=@'
-<script>
+<script id="nitram-sales-date-filter">
 (()=>{
  const pad=n=>String(n).padStart(2,'0');
+ const day=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
  const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
- const dayStart=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
- const setDate=(el,value)=>{if(!el)return;el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
- function installSalesDatePreset(){
-  const headings=[...document.querySelectorAll('h1,h2,h3,[class*="title"]')];
-  const heading=headings.find(e=>(e.textContent||'').trim().toLowerCase()==='sales history');
-  if(!heading)return;
-  const root=heading.closest('main')||heading.parentElement?.parentElement?.parentElement||document;
-  const dates=[...root.querySelectorAll('input[type="date"]')];
-  if(dates.length<2)return;
-  const first=dates[0],second=dates[1];
-  if(root.querySelector('[data-nitram-date-presets]'))return;
-  const wrap=document.createElement('div');wrap.dataset.nitramDatePresets='1';
-  wrap.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px 0';
-  const label=document.createElement('label');label.textContent='Date range';label.style.cssText='font-size:12px;font-weight:600;color:#475467';
-  const select=document.createElement('select');select.setAttribute('aria-label','Sales history date range');
-  select.style.cssText='min-width:150px;padding:9px 12px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#344054;font:inherit';
-  [['today','Today'],['yesterday','Yesterday'],['week','1 week'],['month','1 month'],['year','1 year'],['custom','Custom date']].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;select.appendChild(o)});
-  const apply=()=>{
-   const now=dayStart(new Date());let from=now,to=now;
-   if(select.value==='yesterday'){from=new Date(now);from.setDate(from.getDate()-1);to=new Date(from)}
-   else if(select.value==='week'){from=new Date(now);from.setDate(from.getDate()-6)}
-   else if(select.value==='month'){from=new Date(now);from.setMonth(from.getMonth()-1)}
-   else if(select.value==='year'){from=new Date(now);from.setFullYear(from.getFullYear()-1)}
-   else if(select.value==='custom'){first.focus();return}
-   setDate(first,iso(from));setDate(second,iso(to));
-  };
-  select.addEventListener('change',apply);label.appendChild(select);wrap.appendChild(label);
-  const anchor=first.closest('label')||first.parentElement;
-  (anchor?.parentElement||first.parentElement).insertBefore(wrap,anchor||first);
-  select.value='custom';
- }
- const observer=new MutationObserver(installSalesDatePreset);
- const start=()=>{installSalesDatePreset();observer.observe(document.body,{childList:true,subtree:true});};
+ const parseDate=s=>{
+  const m=String(s||'').match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if(!m)return null;const d=new Date(+m[3],+m[2]-1,+m[1]);
+  return d.getFullYear()===+m[3]&&d.getMonth()===+m[2]-1&&d.getDate()===+m[1]?d:null;
+ };
+ let active=false,mode='today',from=null,to=null,table=null,body=null,rows=[];
+ const findView=()=>{
+  const hs=[...document.querySelectorAll('h1,h2,h3')];
+  const h=hs.find(x=>(x.textContent||'').trim().toLowerCase()==='sales history');
+  if(!h)return null;
+  let n=h;
+  for(let i=0;i<7&&n;i++,n=n.parentElement){
+   const t=n.querySelector('table');
+   if(t&&/receipt/i.test(t.innerText)&&/date/i.test(t.innerText))return {h,root:n,table:t};
+  }
+  return null;
+ };
+ const dateColumn=t=>{
+  const th=[...t.querySelectorAll('thead th')];
+  let i=th.findIndex(x=>(x.textContent||'').trim().toLowerCase()==='date');
+  if(i>=0)return i;
+  const first=t.querySelector('tr');if(!first)return -1;
+  return [...first.children].findIndex(x=>(x.textContent||'').trim().toLowerCase()==='date');
+ };
+ const apply=()=>{
+  if(!table||!table.isConnected)return;
+  const col=dateColumn(table);if(col<0)return;
+  const now=day(new Date());let start=null,end=null;
+  if(mode==='today'){start=now;end=new Date(now);end.setDate(end.getDate()+1)}
+  if(mode==='yesterday'){end=now;start=new Date(now);start.setDate(start.getDate()-1)}
+  if(mode==='week'){start=new Date(now);start.setDate(start.getDate()-6);end=new Date(now);end.setDate(end.getDate()+1)}
+  if(mode==='month'){start=new Date(now);start.setMonth(start.getMonth()-1);end=new Date(now);end.setDate(end.getDate()+1)}
+  if(mode==='year'){start=new Date(now);start.setFullYear(start.getFullYear()-1);end=new Date(now);end.setDate(end.getDate()+1)}
+  if(mode==='custom'){
+   if(!from||!to){rows.forEach(r=>r.style.display='');return}
+   start=new Date(from+'T00:00:00');end=new Date(to+'T00:00:00');end.setDate(end.getDate()+1);
+  }
+  rows=[...table.querySelectorAll('tbody tr')];
+  rows.forEach(r=>{
+   const cell=r.children[col],d=parseDate(cell?.textContent||'');
+   r.style.display=(!d||!start||!end)?'':(d>=start&&d<end?'':'none');
+  });
+ };
+ const install=()=>{
+  const v=findView();if(!v)return;
+  table=v.table;
+  const oldDates=[...v.root.querySelectorAll('input[type="date"]')];
+  oldDates.forEach(el=>{let p=el;for(let i=0;i<3&&p.parentElement&&p.parentElement!==v.root;i++)p=p.parentElement;p.style.display='none';});
+  let bar=v.root.querySelector('[data-nitram-date-presets]');
+  if(!bar){
+   bar=document.createElement('div');bar.dataset.nitramDatePresets='1';
+   bar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 14px';
+   const title=document.createElement('strong');title.textContent='Date range';title.style.cssText='font-size:13px;color:#344054';
+   const select=document.createElement('select');select.setAttribute('aria-label','Sales History date range');
+   select.style.cssText='padding:9px 12px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#344054;font:inherit';
+   [['today','Today'],['yesterday','Yesterday'],['week','1 week'],['month','1 month'],['year','1 year'],['custom','Custom date']].forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;select.appendChild(o)});
+   const start=document.createElement('input');start.type='date';start.setAttribute('aria-label','Custom start date');start.style.cssText='display:none;padding:8px;border:1px solid #d0d5dd;border-radius:8px';
+   const end=document.createElement('input');end.type='date';end.setAttribute('aria-label','Custom end date');end.style.cssText='display:none;padding:8px;border:1px solid #d0d5dd;border-radius:8px';
+   select.addEventListener('change',()=>{mode=select.value;const custom=mode==='custom';start.style.display=end.style.display=custom?'':'none';if(!custom)apply();else apply()});
+   start.addEventListener('change',()=>{from=start.value;mode='custom';apply()});
+   end.addEventListener('change',()=>{to=end.value;mode='custom';apply()});
+   bar.append(title,select,start,end);
+   const filters=[...v.root.querySelectorAll('input')].find(x=>x.type==='text'||x.type==='search');
+   const anchor=filters?.parentElement||oldDates[0]?.parentElement?.parentElement||v.table;
+   anchor.parentElement.insertBefore(bar,anchor);
+  }
+  apply();
+ };
+ const observer=new MutationObserver(()=>{const v=findView();if(v&&v.table!==table){table=v.table;install()}else if(v)install()});
+ const start=()=>{install();observer.observe(document.body,{childList:true,subtree:true});};
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 </script>
 '@
-if(-not $html.Contains('</body>')){throw 'Could not find </body> in index.html for Sales History date filter'}
-if(-not $html.Contains('data-nitram-date-presets')){$html=$html.Replace('</body>',$dateFilter+[Environment]::NewLine+'</body>')}
+if(-not $html.Contains('id="nitram-sales-date-filter"')){$html=$html.Replace('</body>',$dateFilter+[Environment]::NewLine+'</body>')}
 Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
