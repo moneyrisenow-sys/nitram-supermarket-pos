@@ -168,3 +168,63 @@ $dateFilter=@'
 '@
 if(-not $html.Contains('id="nitram-sales-date-filter"')){$html=$html.Replace('</body>',$dateFilter+[Environment]::NewLine+'</body>')}
 Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
+
+
+# Import the new 4,728-row ROBIPOS catalogue from the checked-in CSV segments.
+$catalogueDir=Join-Path $env:GITHUB_WORKSPACE 'catalogue-import'
+$parts=1..5 | ForEach-Object { Join-Path $catalogueDir ("productlist20-part"+$_+".csv") }
+if(@($parts | Where-Object { Test-Path -LiteralPath $_ }).Count -ne 5){throw 'The five productlist20.csv source segments are required.'}
+$combined=Join-Path $env:RUNNER_TEMP 'productlist20-combined.csv'
+$writer=[System.IO.StreamWriter]::new($combined,$false,[System.Text.UTF8Encoding]::new($false))
+try{foreach($part in $parts){$writer.Write([System.IO.File]::ReadAllText($part))}}finally{$writer.Dispose()}
+$headers=@('sourceProductId','name','categoryId','supplierId','field05','taxIncluded','buy','price','promoPrice','wholesalePrice','field11','field12','field13','field14','field15','sourceBarcodeUid','field17','field18','field19','stock','updatedAt','updatedBy','field23','field24','expiryDate','itemType','priceMode','brand','status','field30','barcode','unit','productType','vatType','field35','field36','field37','field38','field39','field40','field41','field42','field43','field44')
+$sourceRows=@(Import-Csv -LiteralPath $combined -Header $headers)
+if($sourceRows.Count -ne 4728){throw "Catalogue row-count check failed: expected 4728, found $($sourceRows.Count)."}
+function Convert-NitramNumber($value){$n=0.0;$s=([string]$value).Trim();if([double]::TryParse($s,[Globalization.NumberStyles]::Any,[Globalization.CultureInfo]::InvariantCulture,[ref]$n)){return $n};return 0.0}
+$products=foreach($r in $sourceRows){
+ $raw=@($headers | ForEach-Object { [string]$r.$_ })
+ $barcode=([string]$r.barcode).Trim()
+ if([string]::IsNullOrWhiteSpace($barcode)){throw "Catalogue product $($r.sourceProductId) has no barcode."}
+ $warnings=@()
+ if(([string]$r.buy).Trim() -notmatch '^-?\d+(\.\d+)?$'){$warnings+=("Buying price source value: "+$r.buy)}
+ if(([string]$r.price).Trim() -notmatch '^-?\d+(\.\d+)?$'){$warnings+=("Selling price source value: "+$r.price)}
+ $stock=Convert-NitramNumber $r.stock
+ if($stock -lt 0 -or $stock -gt 100000){$warnings+=("Unusual source stock quantity: "+$r.stock)}
+ [pscustomobject]@{
+  id=$barcode;barcode=$barcode;name=([string]$r.name).Trim();cat=("Category "+([string]$r.categoryId).Trim())
+  buy=(Convert-NitramNumber $r.buy);price=(Convert-NitramNumber $r.price);stock=$stock
+  reorder=0;promoPrice=(Convert-NitramNumber $r.promoPrice);wholesalePrice=(Convert-NitramNumber $r.wholesalePrice)
+  sourceProductId=[string]$r.sourceProductId;sourceQuantity=[string]$r.stock;supplierId=[string]$r.supplierId
+  taxIncluded=[string]$r.taxIncluded;sourceBarcodeUid=[string]$r.sourceBarcodeUid;updatedAt=[string]$r.updatedAt
+  brand=[string]$r.brand;unit=[string]$r.unit;productType=[string]$r.productType;vatType=[string]$r.vatType;status=[string]$r.status
+  sourceColumns=$raw;importWarnings=$warnings
+ }
+}
+if(@($products | Select-Object -ExpandProperty barcode -Unique).Count -ne 4728){throw 'Catalogue barcode uniqueness check failed.'}
+$productJson=ConvertTo-Json -InputObject @($products) -Depth 8 -Compress
+$pattern='(?s)const ROBIPOS_PRODUCTS=\[.*?\];\s*const seed='
+$replacement='const ROBIPOS_PRODUCTS='+$productJson+';'+[Environment]::NewLine+'const seed='
+$app=[regex]::Replace($app,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{param($m)$replacement},1)
+if($app -notmatch 'const ROBIPOS_PRODUCTS=\['){throw 'Could not replace the original product catalogue in app.js.'}
+# Replace the one-time old-catalogue migration without touching sales, shifts, users or financial records.
+$app=[regex]::Replace($app,'(?s)if\(S\.productlist74ImportVersion!==1\)\s*\{\s*S\.products=JSON\.parse\(JSON\.stringify\(ROBIPOS_PRODUCTS\)\);\s*S\.productlist74ImportVersion=1;\s*S\.productlist74ImportedAt=.*?;\s*\}',"if(S.productlist20ImportVersion!==1){S.products=JSON.parse(JSON.stringify(ROBIPOS_PRODUCTS));S.productlist20ImportVersion=1;S.productlist20ImportedAt='2026-11-07';}",1)
+if($app -notmatch 'productlist20ImportVersion'){throw 'Could not install the one-time productlist20 catalogue migration.'}
+# Keep held-sale snapshots intact when their old catalogue entries are replaced.
+$app=$app.Replace("S.held=S.held.filter(h=>h&&Array.isArray(h.items)).map(h=>({...h,items:h.items.filter(x=>x&&S.products.some(p=>p.id===String(x.id))).map(x=>({...x,id:String(x.id),qty:Math.max(1,Math.floor(Number(x.qty)||1))}))})).filter(h=>h.items.length);","S.held=S.held.filter(h=>h&&Array.isArray(h.items)).map(h=>({...h,items:h.items.filter(Boolean).map(x=>({...x,id:String(x.id),qty:Math.max(1,Math.floor(Number(x.qty)||1))}))}));")
+# Add portable backup controls to the Products and Sales History screens.
+$app=$app.Replace('<button class=btn onclick="productForm()">+ Add Product</button></div>','<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportProductsBackup(''csv'')">Export CSV</button><button class=ghost onclick="exportProductsBackup(''json'')">Export JSON</button><button class=ghost onclick="chooseBackupImport(''products'')">Import Backup</button><button class=btn onclick="productForm()">+ Add Product</button></div></div>')
+$app=$app.Replace('<button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>','<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportSalesBackup(''csv'')">Export CSV</button><button class=ghost onclick="exportSalesBackup(''json'')">Export JSON</button><button class=ghost onclick="chooseBackupImport(''sales'')">Import Backup</button><button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div></div>')
+$backupJs=@'
+function _nitramDownload(text,filename,type){const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)}
+function _nitramCsv(rows){return rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')}
+function exportProductsBackup(format){const p=(S.products||[]).map(x=>({...x})),date=new Date().toISOString().slice(0,10);if(format==='json')_nitramDownload(JSON.stringify({format:'NITRAM_PRODUCTS',version:1,exportedAt:new Date().toISOString(),products:p},null,2),'NITRAM_Products_'+date+'.json','application/json');else{const keys=['barcode','name','category','buying_price','selling_price','stock','reorder_level','unit','vat_type','status'];const rows=[keys,...p.map(x=>[x.barcode||x.id,x.name,x.cat,x.buy,x.price,x.stock,x.reorder,x.unit,x.vatType,x.status])];_nitramDownload('\ufeff'+_nitramCsv(rows),'NITRAM_Products_'+date+'.csv','text/csv;charset=utf-8')}}
+function exportSalesBackup(format){const sales=(S.sales||[]).map(x=>({...x})),date=new Date().toISOString().slice(0,10);if(format==='json')_nitramDownload(JSON.stringify({format:'NITRAM_SALES',version:1,exportedAt:new Date().toISOString(),sales},null,2),'NITRAM_Sales_History_'+date+'.json','application/json');else{const keys=['receipt','date','sold_by','payment','total','net_total','status','items_json'];const rows=[keys,...sales.map(x=>[x.receipt,x.date,x.soldBy,x.payment,x.total,x.netTotal,saleStatus(x),JSON.stringify(x.items||[])])];_nitramDownload('\ufeff'+_nitramCsv(rows),'NITRAM_Sales_History_'+date+'.csv','text/csv;charset=utf-8')}}
+function chooseBackupImport(kind){const input=document.createElement('input');input.type='file';input.accept='.json,.csv,.tsv,.txt,.xml,application/json,text/csv,text/tab-separated-values,text/plain,application/xml';input.onchange=e=>importPortableBackup(e,kind);input.click()}
+function _nitramParseDelimited(text,delimiter){const rows=[];let row=[],field='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){field+='"';i++}else if(c==='"')quoted=false;else field+=c}else if(c==='"')quoted=true;else if(c===delimiter){row.push(field);field=''}else if(c==='\n'){row.push(field.replace(/\r$/,''));if(row.some(x=>x!==''))rows.push(row);row=[];field=''}else field+=c}if(field||row.length){row.push(field.replace(/\r$/,''));rows.push(row)}return rows}
+function _nitramNormalizeProduct(x){const get=(...names)=>{for(const n of names){const k=Object.keys(x||{}).find(z=>z.toLowerCase().replace(/[^a-z0-9]/g,'')===n);if(k&&x[k]!==''&&x[k]!=null)return x[k]}return ''};const barcode=String(get('barcode','ean','sku','productcode','id','itemcode')).trim(),name=String(get('name','product','productname','description','item')).trim();if(!barcode||!name)return null;const n=v=>{const z=Number(String(v??'').replace(/,/g,''));return Number.isFinite(z)?z:0};return{id:barcode,barcode,name,cat:String(get('category','cat','categoryname')||'Uncategorised'),buy:n(get('buy','buyingprice','cost','costprice','purchaseprice')),price:n(get('price','sellingprice','retailprice','unitprice')),stock:n(get('stock','quantity','qty','onhand','available')),reorder:n(get('reorder','reorderlevel','minimumstock')),unit:String(get('unit','uom')||'pcs'),vatType:String(get('vattype','taxstatus')||''),status:String(get('status')||'active')}}
+function importPortableBackup(event,kind){const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const text=String(reader.result||'').replace(/^\ufeff/,'').trim();let data,rows;if(file.name.toLowerCase().endsWith('.json')||/^[\[{]/.test(text)){data=JSON.parse(text)}else if(file.name.toLowerCase().endsWith('.xml')||text.startsWith('<?xml')){const doc=new DOMParser().parseFromString(text,'application/xml');if(doc.querySelector('parsererror'))throw Error('XML file could not be read');data=[...doc.querySelectorAll('row,product,sale,item')].map(el=>Object.fromEntries([...el.children].map(n=>[n.tagName,n.textContent])))}else{const delimiter=(text.split(/\r?\n/,1)[0].split('\t').length>text.split(/\r?\n/,1)[0].split(',').length)?'\t':',';rows=_nitramParseDelimited(text,delimiter);const heads=(rows.shift()||[]).map(x=>x.trim());data=rows.map(row=>Object.fromEntries(heads.map((h,i)=>[h,row[i]??''])))}if(kind==='products'){let list=Array.isArray(data)?data:(data.products||data.items||data.data||data.Products);if(!Array.isArray(list))throw Error('No product records were found in this file');const clean=list.map(_nitramNormalizeProduct).filter(Boolean);if(!clean.length)throw Error('No rows contained a recognizable barcode and product name');const unique=new Map();clean.forEach(p=>unique.set(p.barcode,p));if(!confirm('Replace the current product catalogue with '+unique.size+' imported products? Sales history and other POS records will be retained. Export your current Products backup first if needed.'))return;S.products=[...unique.values()];S.productlist20ImportVersion=2;S.cart=(S.cart||[]).filter(x=>S.products.some(p=>p.id===String(x.id)));save();render('products');toast('Imported '+S.products.length+' products. '+(clean.length-unique.size)+' duplicate barcode rows were merged.')}else{let list=Array.isArray(data)?data:(data.sales||data.transactions||data.items||data.data||data.Sales);if(!Array.isArray(list))throw Error('No sales records were found in this file');const existing=new Set((S.sales||[]).map(x=>String(x.receipt||x.id||'')));let added=0;list.forEach(x=>{const receipt=String(x.receipt||x.receipt_no||x.receiptNumber||x.invoice||x.id||'').trim();if(!receipt||existing.has(receipt))return;const total=Number(x.total??x.amount??x.net_total??0);S.sales.push({...x,id:x.id||'IMPORT-'+receipt,receipt,date:x.date||x.timestamp||'',soldBy:x.soldBy||x.sold_by||x.cashier||'Imported',payment:x.payment||x.payment_method||'Unknown',total:Number.isFinite(total)?total:0,items:Array.isArray(x.items)?x.items:[]});existing.add(receipt);added++});if(!added)throw Error('No new sales were imported. Existing receipt numbers may already be present or the file may lack receipt numbers.');save();render('sales');toast('Imported '+added+' new sales records; duplicates were skipped.')}}catch(err){console.error(err);toast('Could not import this file: '+String(err.message||err))}finally{event.target.value=''}};reader.readAsText(file)}
+'@
+$marker='function downloadCSV(rows,filename)'
+if(-not $app.Contains($marker)){throw 'Could not locate CSV utility insertion point.'}
+$app=$app.Replace($marker,$backupJs+[Environment]::NewLine+$marker)
+Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
