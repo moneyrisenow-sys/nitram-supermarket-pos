@@ -31,7 +31,7 @@ const prod=id=>S.products.find(p=>p.id===id);
 $a=$app.IndexOf('let _nitramSaveRevision=0;');$b=$app.IndexOf('// Persist the compacted live catalogue',$a);if($a -lt 0 -or $b -lt 0){throw 'Save patch markers missing'};$app=$app.Substring(0,$a)+$save+$app.Substring($b)
 $receipt=@'
 function receiptPlainText(s){
- const rows=['[C][B]NITRAM SUPERMARKET','[C][S]SALES RECEIPT','[L]------------------------------------------','[B]Receipt No: '+(s.receipt||'-'),'Date: '+(s.date||''),'Served by: '+(s.soldBy||'Unknown'),'[L]------------------------------------------','[B]ITEM / QTY                         AMOUNT'];
+ const rows=['[C][B]NITRAM SUPERMARKET','[C]SALES RECEIPT','[L]------------------------------------------','[B]Receipt No: '+(s.receipt||'-'),'Date: '+(s.date||''),'Served by: '+(s.soldBy||'Unknown'),'[L]------------------------------------------','[B]ITEM / QTY                         AMOUNT'];
  (s.items||[]).forEach(x=>{rows.push('[B]'+String(x.name||(prod(x.id)||{}).name||x.id));rows.push('  '+x.qty+' x '+Number(x.price||0).toFixed(2)+'                  '+(Number(x.price||0)*Number(x.qty||0)).toFixed(2))});
  rows.push('[L]------------------------------------------','[B]TOTAL: KES '+Number(s.netTotal??s.total??0).toFixed(2),'Payment: '+(s.payment||'-'),'Received: '+(s.received==null?'Not entered':'KES '+Number(s.received).toFixed(2)),'Change: '+(s.change==null?'-':'KES '+Number(s.change).toFixed(2)),'[L]------------------------------------------','[C][B]'+(S.receiptFooter||'Thank you for shopping with us!'),'[C]Please keep this receipt for your records.','','');return rows.join('\n');
 }
@@ -77,3 +77,53 @@ $rust=$rust.Replace('fn main(){',$printer+[Environment]::NewLine+'fn main(){')
 }
 $rust=$rust.Replace('tauri::generate_handler![storage_info]','tauri::generate_handler![storage_info,print_receipt]');Set-Content -LiteralPath $rustPath -Value $rust -NoNewline -Encoding utf8
 Write-Host 'Applied NITRAM fixes.'
+
+
+# Remove the unsupported [S] marker and add reliable Sales History date presets.
+$htmlPath=Join-Path $project 'dist/index.html'
+$html=Get-Content -LiteralPath $htmlPath -Raw
+$dateFilter=@'
+<script>
+(()=>{
+ const pad=n=>String(n).padStart(2,'0');
+ const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+ const dayStart=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
+ const setDate=(el,value)=>{if(!el)return;el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
+ function installSalesDatePreset(){
+  const headings=[...document.querySelectorAll('h1,h2,h3,[class*="title"]')];
+  const heading=headings.find(e=>(e.textContent||'').trim().toLowerCase()==='sales history');
+  if(!heading)return;
+  const root=heading.closest('main')||heading.parentElement?.parentElement?.parentElement||document;
+  const dates=[...root.querySelectorAll('input[type="date"]')];
+  if(dates.length<2)return;
+  const first=dates[0],second=dates[1];
+  if(root.querySelector('[data-nitram-date-presets]'))return;
+  const wrap=document.createElement('div');wrap.dataset.nitramDatePresets='1';
+  wrap.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px 0';
+  const label=document.createElement('label');label.textContent='Date range';label.style.cssText='font-size:12px;font-weight:600;color:#475467';
+  const select=document.createElement('select');select.setAttribute('aria-label','Sales history date range');
+  select.style.cssText='min-width:150px;padding:9px 12px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#344054;font:inherit';
+  [['today','Today'],['yesterday','Yesterday'],['week','1 week'],['month','1 month'],['year','1 year'],['custom','Custom date']].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;select.appendChild(o)});
+  const apply=()=>{
+   const now=dayStart(new Date());let from=now,to=now;
+   if(select.value==='yesterday'){from=new Date(now);from.setDate(from.getDate()-1);to=new Date(from)}
+   else if(select.value==='week'){from=new Date(now);from.setDate(from.getDate()-6)}
+   else if(select.value==='month'){from=new Date(now);from.setMonth(from.getMonth()-1)}
+   else if(select.value==='year'){from=new Date(now);from.setFullYear(from.getFullYear()-1)}
+   else if(select.value==='custom'){first.focus();return}
+   setDate(first,iso(from));setDate(second,iso(to));
+  };
+  select.addEventListener('change',apply);label.appendChild(select);wrap.appendChild(label);
+  const anchor=first.closest('label')||first.parentElement;
+  (anchor?.parentElement||first.parentElement).insertBefore(wrap,anchor||first);
+  select.value='custom';
+ }
+ const observer=new MutationObserver(installSalesDatePreset);
+ const start=()=>{installSalesDatePreset();observer.observe(document.body,{childList:true,subtree:true});};
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
+</script>
+'@
+if(-not $html.Contains('</body>')){throw 'Could not find </body> in index.html for Sales History date filter'}
+if(-not $html.Contains('data-nitram-date-presets')){$html=$html.Replace('</body>',$dateFilter+[Environment]::NewLine+'</body>')}
+Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
