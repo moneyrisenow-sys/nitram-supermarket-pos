@@ -382,3 +382,19 @@ if (-not $app.Contains('id=productsExportFormat')) { throw 'Products export form
 
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 node --check $appPath
+
+
+
+# Keep the separate M-Pesa variance detail field working while the main variance uses combined takings.
+$app = Get-Content -LiteralPath $appPath -Raw
+$combinedPreview = @'
+function updateShiftExpenseBalance(){
+ const counted=Number(document.getElementById('shiftCounted')?.value||0),expense=Number(document.getElementById('shiftExpenseDisplay')?.value||0),mpesaCounted=Number(document.getElementById('shiftMpesaCounted')?.value||0),sh=S.shift||{},sales=(S.sales||[]).filter(x=>sh.id?x.shiftId===sh.id:(!x.shiftId&&new Date(Number(x.timestamp)||new Date(x.date).getTime())>=new Date(sh.openedAt||0))),net=s=>Math.max(0,Number(s.total||0)-Number(s.returnedValue||0)),cashSales=sales.filter(x=>x.payment==='Cash').reduce((n,x)=>n+net(x),0),mpesaSales=sales.filter(x=>x.payment==='M-Pesa').reduce((n,x)=>n+net(x),0),totalSales=sales.reduce((n,x)=>n+net(x),0),cashOut=(S.cashOutflows||[]).filter(x=>x.payment==='Cash'&&x.shiftId===sh.id).reduce((n,x)=>n+Number(x.amount||0),0),expected=Number(sh.openingFloat||0)+cashSales-cashOut;
+ const el=document.getElementById('shiftVarianceDisplay');if(el)el.value=money(counted+expense+cashOut+mpesaCounted-Number(sh.openingFloat||0)-totalSales);
+ const me=document.getElementById('shiftMpesaVarianceDisplay');if(me)me.value=money(mpesaCounted-mpesaSales);
+}
+'@
+$app = [regex]::Replace($app,'(?s)function updateShiftExpenseBalance\(\)\{.*?(?=function closeCashierShift\()', [System.Text.RegularExpressions.MatchEvaluator]{param($m)$combinedPreview+[Environment]::NewLine},1)
+if (-not $app.Contains('totalSales=sales.reduce((n,x)=>n+net(x),0)') -or -not $app.Contains('money(mpesaCounted-mpesaSales)')) { throw 'Shift live variance preview validation failed.' }
+Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+node --check $appPath
