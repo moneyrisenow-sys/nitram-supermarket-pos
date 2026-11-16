@@ -398,3 +398,14 @@ $app = [regex]::Replace($app,'(?s)function updateShiftExpenseBalance\(\)\{.*?(?=
 if (-not $app.Contains('totalSales=sales.reduce((n,x)=>n+net(x),0)') -or -not $app.Contains('money(mpesaCounted-mpesaSales)')) { throw 'Shift live variance preview validation failed.' }
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 node --check $appPath
+
+
+
+# Make the pre-count variance preview use the same combined-sales basis (zero entered counts).
+$app = Get-Content -LiteralPath $appPath -Raw
+$oldInitialVariance = 'value="\${money(shiftExpenses-expected)}"'
+$newInitialVariance = 'value="\${money(shiftExpenses+cashOut-Number(sh.openingFloat||0)-total)}"'
+if ($app.Contains($oldInitialVariance)) { $app = $app.Replace($oldInitialVariance,$newInitialVariance) }
+if (-not $app.Contains($newInitialVariance)) { throw 'Initial combined shift variance preview was not updated.' }
+Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+node --check $appPath
