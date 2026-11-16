@@ -1,4 +1,5 @@
 name: Build NITRAM Windows installer
+run-name: NITRAM Windows installer build
 
 on:
   workflow_dispatch:
