@@ -347,3 +347,38 @@ Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
 
 node --check $appPath
 Write-Host 'Applied only the six requested NITRAM repairs.'
+
+
+
+# Final exact-match guards for the requested single-button exports and Sales History paging.
+$app = Get-Content -LiteralPath $appPath -Raw
+$quote = [char]39
+$oldRows = 'all.map(s=>salesRow(s)).join(' + $quote + $quote + ')'
+$newRows = 'all.slice(0,salesPageSize).map(s=>salesRow(s)).join(' + $quote + $quote + ')'
+$salesStart = $app.IndexOf('function sales(){')
+$salesEnd = $app.IndexOf('function salesRow(', $salesStart)
+if ($salesStart -lt 0 -or $salesEnd -lt 0) { throw 'Sales History pagination validation could not locate its renderer.' }
+$salesBlock = $app.Substring($salesStart,$salesEnd-$salesStart)
+$salesBlock = $salesBlock.Replace($oldRows,$newRows)
+if (-not $salesBlock.Contains('all.slice(0,salesPageSize).map(s=>salesRow(s))')) { throw 'Sales History is not limited to one page of 50 records.' }
+if (-not $salesBlock.Contains('id=salesPager')) { throw 'Sales History page controls were not inserted.' }
+$app = $app.Substring(0,$salesStart) + $salesBlock + $app.Substring($salesEnd)
+
+$singleSales = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=salesExportFormat class=field aria-label="Sales export format" style="width:auto;min-width:95px"><option value=csv>CSV</option><option value=json>JSON</option></select><button class=ghost onclick="exportSalesBackup(document.getElementById('salesExportFormat').value)">Export</button><button class=ghost onclick="chooseBackupImport('sales')">Import Backup</button><button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>
+'@
+$salesActionPattern = '<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportSalesBackup\(''csv''\)">Export CSV</button>.*?<button class=ghost onclick="printLast\(\)">🖨 Print latest receipt</button></div>'
+$app = [regex]::Replace($app,$salesActionPattern,[System.Text.RegularExpressions.MatchEvaluator]{param($m)$singleSales.Trim()},1)
+if ($app.Contains('exportSalesBackup(' + $quote + 'csv' + $quote + ')') -or $app.Contains('exportSalesBackup(' + $quote + 'json' + $quote + ')')) { throw 'Sales History still contains multiple export buttons.' }
+if (-not $app.Contains('id=salesExportFormat')) { throw 'Sales History export format dropdown was not inserted.' }
+
+$singleProducts = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=productsExportFormat class=field aria-label="Products export format" style="width:auto;min-width:95px"><option value=csv>CSV</option><option value=json>JSON</option></select><button class=ghost onclick="exportProductsBackup(document.getElementById('productsExportFormat').value)">Export</button><button class=ghost onclick="chooseBackupImport('products')">Import Backup</button><button class=btn onclick="productForm()">+ Add Product</button></div>
+'@
+$productsActionPattern = '<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportProductsBackup\(''csv''\)">Export CSV</button>.*?<button class=btn onclick="productForm\(\)">\+ Add Product</button></div>'
+$app = [regex]::Replace($app,$productsActionPattern,[System.Text.RegularExpressions.MatchEvaluator]{param($m)$singleProducts.Trim()},1)
+if ($app.Contains('exportProductsBackup(' + $quote + 'csv' + $quote + ')') -or $app.Contains('exportProductsBackup(' + $quote + 'json' + $quote + ')')) { throw 'Products still contains multiple export buttons.' }
+if (-not $app.Contains('id=productsExportFormat')) { throw 'Products export format dropdown was not inserted.' }
+
+Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+node --check $appPath
