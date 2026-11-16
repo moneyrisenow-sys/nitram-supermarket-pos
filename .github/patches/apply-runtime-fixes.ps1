@@ -403,8 +403,8 @@ node --check $appPath
 
 # Make the pre-count variance preview use the same combined-sales basis (zero entered counts).
 $app = Get-Content -LiteralPath $appPath -Raw
-$oldInitialVariance = 'value="\${money(shiftExpenses-expected)}"'
-$newInitialVariance = 'value="\${money(shiftExpenses+cashOut-Number(sh.openingFloat||0)-total)}"'
+$oldInitialVariance = 'value="' + '$' + '{money(shiftExpenses-expected)}"'
+$newInitialVariance = 'value="' + '$' + '{money(shiftExpenses+cashOut-Number(sh.openingFloat||0)-total)}"'
 if ($app.Contains($oldInitialVariance)) { $app = $app.Replace($oldInitialVariance,$newInitialVariance) }
 if (-not $app.Contains($newInitialVariance)) { throw 'Initial combined shift variance preview was not updated.' }
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
