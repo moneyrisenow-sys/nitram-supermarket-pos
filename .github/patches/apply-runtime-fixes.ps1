@@ -228,3 +228,122 @@ $marker='function downloadCSV(rows,filename)'
 if(-not $app.Contains($marker)){throw 'Could not locate CSV utility insertion point.'}
 $app=$app.Replace($marker,$backupJs+[Environment]::NewLine+$marker)
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+
+
+
+# Targeted repairs requested: Sales History search/paging/backups, Products backups,
+# Held Sales search responsiveness, and combined Cash + M-Pesa shift variance.
+$app = Get-Content -LiteralPath $appPath -Raw
+
+$oldSalesPrefix = 'function sales(){const all=S.sales.slice().sort((a,b)=>new Date(b.id)-new Date(a.id));return'
+if (-not $app.Contains($oldSalesPrefix)) { throw 'Sales History renderer marker changed; refusing to patch an unexpected source.' }
+$app = $app.Replace($oldSalesPrefix,'let salesPage=0,salesPageSize=50,salesFiltered=[];' + [Environment]::NewLine + 'function sales(){const all=S.sales.slice().sort((a,b)=>Number(b.id)-Number(a.id));salesFiltered=all;salesPage=0;return')
+$app = $app.Replace('<input id="salesSearch" placeholder="Search receipt, cashier, payment or product..." oninput="filterSales()" style="flex:1;min-width:220px;max-width:440px;padding:10px;border:1px solid #d0d5dd;border-radius:9px">','<input id="salesSearch" class=field placeholder="Search receipt, cashier, payment or product..." oninput="filterSales()" style="flex:1;min-width:220px;max-width:440px;width:100%" autocomplete=off>')
+$app = $app.Replace('<input id="salesFrom" type="date" aria-label="From date" onchange="filterSales()" style="padding:9px;border:1px solid #d0d5dd;border-radius:9px">','<select id="salesRange" class=field aria-label="Sales date range" onchange="applySalesRange()" style="min-width:130px"><option value=all>All dates</option><option value=today>Today</option><option value=yesterday>Yesterday</option><option value=week>1 week</option><option value=month>1 month</option><option value=year>1 year</option><option value=custom>Custom date</option></select><input id="salesFrom" type="date" aria-label="From date" onchange="filterSales()" style="display:none;padding:9px;border:1px solid #d0d5dd;border-radius:9px">')
+$app = $app.Replace('<input id="salesTo" type="date" aria-label="To date" onchange="filterSales()" style="padding:9px;border:1px solid #d0d5dd;border-radius:9px">','<input id="salesTo" type="date" aria-label="To date" onchange="filterSales()" style="display:none;padding:9px;border:1px solid #d0d5dd;border-radius:9px">')
+
+$oldSalesActions = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportSalesBackup(''csv'')">Export CSV</button><button class=ghost onclick="exportSalesBackup(''json'')">Export JSON</button><button class=ghost onclick="chooseBackupImport(''sales'')">Import Backup</button><button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>
+'@
+$newSalesActions = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=salesExportFormat class=field aria-label="Sales export format" style="width:auto;min-width:95px"><option value=csv>CSV</option><option value=json>JSON</option></select><button class=ghost onclick="exportSalesBackup(document.getElementById('salesExportFormat').value)">Export</button><button class=ghost onclick="chooseBackupImport('sales')">Import Backup</button><button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>
+'@
+$app = $app.Replace($oldSalesActions.Trim(),$newSalesActions.Trim())
+if ($app.Contains('<button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>')) {
+ $app = $app.Replace('<button class=ghost onclick="printLast()">🖨 Print latest receipt</button></div>',$newSalesActions.Trim())
+}
+
+$salesStart = $app.IndexOf('function sales(){')
+$salesEnd = $app.IndexOf('function salesRow(', $salesStart)
+if ($salesStart -lt 0 -or $salesEnd -lt 0) { throw 'Sales History function boundaries were not found.' }
+$salesBlock = $app.Substring($salesStart,$salesEnd-$salesStart)
+$salesBlock = [regex]::Replace($salesBlock,'all\.map\(s=>salesRow\(s\)\)\.join\(''\)','all.slice(0,salesPageSize).map(s=>salesRow(s)).join('''')',1)
+$salesBlock = $salesBlock.Replace('</tbody></table></div></div>','</tbody></table></div><div id=salesPager style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;flex-wrap:wrap"><span id=salesPageInfo class=muted>Sales pages</span><div style="display:flex;gap:8px"><button class=ghost id=salesPrev onclick="changeSalesPage(-1)">Previous</button><button class=ghost id=salesNext onclick="changeSalesPage(1)">Next</button></div></div></div>')
+$app = $app.Substring(0,$salesStart) + $salesBlock + $app.Substring($salesEnd)
+
+$newSalesFunctions = @'
+function applySalesRange(){
+ const mode=document.getElementById('salesRange')?.value||'all',fromEl=document.getElementById('salesFrom'),toEl=document.getElementById('salesTo');
+ if(!fromEl||!toEl)return;
+ const custom=mode==='custom';fromEl.style.display=toEl.style.display=custom?'':'none';
+ if(custom){filterSales();return}
+ const pad=n=>String(n).padStart(2,'0'),key=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+ const today=new Date();today.setHours(0,0,0,0);let from=null,to=null;
+ if(mode==='today'){from=today;to=today}
+ else if(mode==='yesterday'){from=new Date(today);from.setDate(from.getDate()-1);to=from}
+ else if(mode==='week'){from=new Date(today);from.setDate(from.getDate()-6);to=today}
+ else if(mode==='month'){from=new Date(today);from.setMonth(from.getMonth()-1);to=today}
+ else if(mode==='year'){from=new Date(today);from.setFullYear(from.getFullYear()-1);to=today}
+ fromEl.value=from?key(from):'';toEl.value=to?key(to):'';filterSales();
+}
+function filterSales(){
+ const q=(document.getElementById('salesSearch')?.value||'').trim().toLowerCase(),from=document.getElementById('salesFrom')?.value||'',to=document.getElementById('salesTo')?.value||'',statusFilter=document.getElementById('salesStatus')?.value||'';
+ salesFiltered=(S.sales||[]).slice().sort((a,b)=>Number(b.id)-Number(a.id)).filter(s=>{
+  const status=saleStatus(s),dateObj=new Date(s.date),dateKey=!isNaN(dateObj)?dateObj.getFullYear()+'-'+String(dateObj.getMonth()+1).padStart(2,'0')+'-'+String(dateObj.getDate()).padStart(2,'0'):'';
+  const text=[s.receipt,s.date,s.soldBy,s.payment,...(s.items||[]).map(x=>x.name||(prod(x.id)||{}).name||x.id)].join(' ').toLowerCase();
+  return text.includes(q)&&(!from||dateKey>=from)&&(!to||dateKey<=to)&&(!statusFilter||status===statusFilter);
+ });
+ salesPage=0;drawSalesPage();
+}
+function drawSalesPage(){
+ const body=document.getElementById('salesRows');if(!body)return;
+ const total=salesFiltered.length,pages=Math.max(1,Math.ceil(total/salesPageSize));salesPage=Math.max(0,Math.min(salesPage,pages-1));
+ const start=salesPage*salesPageSize;body.innerHTML=total?salesFiltered.slice(start,start+salesPageSize).map(s=>salesRow(s)).join(''):'<tr><td colspan=8 style="text-align:center;padding:35px">No matching sales.</td></tr>';
+ const info=document.getElementById('salesPageInfo');if(info)info.textContent=total?'Showing '+(start+1)+'–'+Math.min(start+salesPageSize,total)+' of '+total:'Showing 0 of 0';
+ const prev=document.getElementById('salesPrev'),next=document.getElementById('salesNext');if(prev)prev.disabled=salesPage===0;if(next)next.disabled=salesPage>=pages-1;
+}
+function changeSalesPage(delta){salesPage+=delta;drawSalesPage()}
+'@
+$app = [regex]::Replace($app,'(?s)function filterSales\(\)\{.*?(?=function saleStatus\()', [System.Text.RegularExpressions.MatchEvaluator]{param($m)$newSalesFunctions+[Environment]::NewLine},1)
+if (-not $app.Contains('function drawSalesPage()')) { throw 'Sales History pagination patch did not apply.' }
+
+$oldProductsActions = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap"><button class=ghost onclick="exportProductsBackup(''csv'')">Export CSV</button><button class=ghost onclick="exportProductsBackup(''json'')">Export JSON</button><button class=ghost onclick="chooseBackupImport(''products'')">Import Backup</button><button class=btn onclick="productForm()">+ Add Product</button></div>
+'@
+$newProductsActions = @'
+<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=productsExportFormat class=field aria-label="Products export format" style="width:auto;min-width:95px"><option value=csv>CSV</option><option value=json>JSON</option></select><button class=ghost onclick="exportProductsBackup(document.getElementById('productsExportFormat').value)">Export</button><button class=ghost onclick="chooseBackupImport('products')">Import Backup</button><button class=btn onclick="productForm()">+ Add Product</button></div>
+'@
+$app = $app.Replace($oldProductsActions.Trim(),$newProductsActions.Trim())
+if ($app.Contains('<button class=btn onclick="productForm()">+ Add Product</button></div>')) {
+ $app = $app.Replace('<button class=btn onclick="productForm()">+ Add Product</button></div>',$newProductsActions.Trim())
+}
+$app = $app.Replace('function exportProductsBackup(format){const p=',"function exportProductsBackup(format){format=format||document.getElementById('productsExportFormat')?.value||'csv';const p=")
+$app = $app.Replace('function exportSalesBackup(format){const sales=',"function exportSalesBackup(format){format=format||document.getElementById('salesExportFormat')?.value||'csv';const sales=")
+
+# Held Sales: debounce the existing search so typing does not rebuild the full page on every keystroke.
+$oldHeldHandler = 'oninput="window.heldCustomerQuery=this.value;const v=this.value;render(''held'');const el=document.getElementById(''heldCustomerSearch'');if(el){el.focus();el.setSelectionRange(v.length,v.length)}"'
+$newHeldHandler = 'oninput="searchHeldSales(this.value)"'
+if ($app.Contains($oldHeldHandler)) { $app = $app.Replace($oldHeldHandler,$newHeldHandler) }
+$heldSearchFunction = @'
+let heldSearchTimer=0;
+function searchHeldSales(value){
+ window.heldCustomerQuery=String(value||'');const position=window.heldCustomerQuery.length;
+ if(heldSearchTimer)clearTimeout(heldSearchTimer);
+ heldSearchTimer=setTimeout(()=>{render('held');const input=document.getElementById('heldCustomerSearch');if(input){input.focus({preventScroll:true});input.setSelectionRange(position,position)}},100);
+}
+'@
+$app = $app.Replace('function confirmResumePayLaterGroup', $heldSearchFunction + [Environment]::NewLine + 'function confirmResumePayLaterGroup')
+if (-not $app.Contains('function searchHeldSales(value)')) { throw 'Held Sales search patch did not apply.' }
+
+# Main shift variance now combines physical cash and confirmed M-Pesa against all net sales.
+# Existing fields, labels and layout remain unchanged.
+$app = $app.Replace(
+ 'expected=Number(sh.openingFloat||0)+cashSales-cashOut,variance=counted+expenses-expected,mpesaVariance=mpesaCounted-mpesaSales',
+ 'expected=Number(sh.openingFloat||0)+cashSales-cashOut,variance=counted+expenses+cashOut+mpesaCounted-Number(sh.openingFloat||0)-netSales,mpesaVariance=mpesaCounted-mpesaSales'
+)
+$app = $app.Replace(
+ 'cashSales=sales.filter(x=>x.payment===''Cash'').reduce((n,x)=>n+net(x),0),mpesaSales=sales.filter(x=>x.payment===''M-Pesa'').reduce((n,x)=>n+net(x),0),cashOut=(S.cashOutflows||[]).filter(x=>x.payment===''Cash''&&x.shiftId===sh.id).reduce((n,x)=>n+Number(x.amount||0),0),expected=Number(sh.openingFloat||0)+cashSales-cashOut;const el=document.getElementById(''shiftVarianceDisplay'');if(el)el.value=money(counted+expense-expected);',
+ 'totalSales=sales.reduce((n,x)=>n+net(x),0),cashOut=(S.cashOutflows||[]).filter(x=>x.payment===''Cash''&&x.shiftId===sh.id).reduce((n,x)=>n+Number(x.amount||0),0);const el=document.getElementById(''shiftVarianceDisplay'');if(el)el.value=money(counted+expense+cashOut+mpesaCounted-Number(sh.openingFloat||0)-totalSales);'
+)
+if (-not $app.Contains('variance=counted+expenses+cashOut+mpesaCounted-Number(sh.openingFloat||0)-netSales')) {
+ throw 'Combined shift variance formula did not apply.'
+}
+Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
+
+$htmlPath = Join-Path $project 'dist/index.html'
+$html = Get-Content -LiteralPath $htmlPath -Raw
+$html = [regex]::Replace($html,'(?s)<script id="nitram-sales-date-filter">.*?</script>','')
+Set-Content -LiteralPath $htmlPath -Value $html -NoNewline -Encoding utf8
+
+node --check $appPath
+Write-Host 'Applied only the six requested NITRAM repairs.'
