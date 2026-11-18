@@ -1,0 +1,31 @@
+name: Clean up NITRAM installer artifacts
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  remove-old-installers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete NITRAM installer artifacts older than 2 hours 45 minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff_epoch=$(date -u -d '2 hours 45 minutes ago' +%s)
+          gh api --paginate "repos/${REPOSITORY}/actions/artifacts" --jq '.artifacts[] | select(.name == "NITRAM-Windows-Installers") | [.id, .created_at] | @tsv' |
+          while IFS=$'\t' read -r artifact_id created_at; do
+            [ -n "$artifact_id" ] || continue
+            created_epoch=$(date -u -d "$created_at" +%s)
+            if [ "$created_epoch" -le "$cutoff_epoch" ]; then
+              echo "Deleting NITRAM installer artifact $artifact_id created at $created_at"
+              gh api --method DELETE "repos/${REPOSITORY}/actions/artifacts/${artifact_id}"
+            fi
+          done
