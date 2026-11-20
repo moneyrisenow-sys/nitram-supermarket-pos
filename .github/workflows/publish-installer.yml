@@ -1,0 +1,43 @@
+name: Publish NITRAM installer download
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-installer.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-installer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the successful Windows build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p installer
+          gh run download 44676051316 --repo "${GITHUB_REPOSITORY}" --name "NITRAM-Windows-Installers" --dir installer
+          exe=$(find installer -maxdepth 2 -type f -iname "*.exe" -print -quit)
+          if [ -z "$exe" ]; then
+            echo "The Windows installer EXE was not found in the build artifact."
+            exit 1
+          fi
+          cp "$exe" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe"
+          test -s "NITRAM_SUPERMARKET_POS_Windows_Setup.exe"
+          ls -lh "NITRAM_SUPERMARKET_POS_Windows_Setup.exe"
+
+      - name: Publish a direct GitHub download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v1.0.0-windows-build47"
+          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$tag" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "$tag" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "NITRAM SUPERMARKET POS — Windows Installer" \
+              --notes "Windows installer built successfully by GitHub Actions build #47. Offline desktop POS with local SQLite database."
+          fi
