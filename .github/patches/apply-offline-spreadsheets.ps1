@@ -53,6 +53,22 @@ async function importPortableBackup(event,kind){
 $app = [regex]::Replace($app,'(?s)function importPortableBackup\(event,kind\)\{.*?(?=function downloadCSV\()', [System.Text.RegularExpressions.MatchEvaluator]{param($m)$importFn+[Environment]::NewLine},1)
 $app = $app.Replace('<option value=json>JSON</option>','<option value=json>JSON</option><option value=xlsx>Excel (.xlsx)</option>')
 if (-not $app.Contains("file.name.toLowerCase().endsWith('.xlsx')")) { throw 'Excel import support was not inserted.' }
+# The legacy renderer placed the export group where the title's closing tag lived.
+# Close the title container before the action group to keep the page DOM balanced.
+$salesStart = $app.IndexOf('function sales(){')
+$salesEnd = $app.IndexOf('function salesRow(', $salesStart)
+if ($salesStart -ge 0 -and $salesEnd -gt $salesStart) {
+ $block = $app.Substring($salesStart,$salesEnd-$salesStart)
+ $block = $block.Replace('</p></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=salesExportFormat','</p></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=salesExportFormat')
+ $app = $app.Substring(0,$salesStart) + $block + $app.Substring($salesEnd)
+}
+$productsStart = $app.IndexOf('function products(){')
+$productsEnd = $app.IndexOf('function productRows(', $productsStart)
+if ($productsStart -ge 0 -and $productsEnd -gt $productsStart) {
+ $block = $app.Substring($productsStart,$productsEnd-$productsStart)
+ $block = $block.Replace('</p></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=productsExportFormat','</p></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><select id=productsExportFormat')
+ $app = $app.Substring(0,$productsStart) + $block + $app.Substring($productsEnd)
+}
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 node --check $appPath
 if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax check failed after spreadsheet support patch.' }
