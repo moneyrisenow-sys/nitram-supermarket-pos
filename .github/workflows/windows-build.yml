@@ -103,6 +103,9 @@ jobs:
       - name: Add offline Excel import and export support
         shell: pwsh
         run: .github/patches/apply-offline-spreadsheets.ps1
+      - name: Add multi-format stock dispatch files
+        shell: pwsh
+        run: .github/patches/apply-dispatch-formats.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
