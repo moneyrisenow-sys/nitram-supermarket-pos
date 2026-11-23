@@ -94,6 +94,18 @@ jobs:
       - name: Apply receipt, barcode and responsiveness fixes
         shell: pwsh
         run: .github/patches/apply-runtime-fixes.ps1
+      - name: Apply offline stock dispatch and reconciliation fixes
+        shell: pwsh
+        run: .github/patches/apply-stock-dispatch-and-pos-fixes.ps1
+      - name: Apply cashier receipt verification and acknowledgements
+        shell: pwsh
+        run: .github/patches/apply-dispatch-acknowledgement.ps1
+      - name: Add offline Excel import and export support
+        shell: pwsh
+        run: .github/patches/apply-offline-spreadsheets.ps1
+      - name: Add multi-format stock dispatch files
+        shell: pwsh
+        run: .github/patches/apply-dispatch-formats.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

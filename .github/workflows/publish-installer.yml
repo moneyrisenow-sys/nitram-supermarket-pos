@@ -1,9 +1,9 @@
 name: Publish NITRAM installer download
 on:
-  push:
+  workflow_run:
+    workflows: ["Build NITRAM Windows installer"]
+    types: [completed]
     branches: [main]
-    paths:
-      - ".github/workflows/publish-installer.yml"
 
 permissions:
   actions: read
@@ -11,15 +11,17 @@ permissions:
 
 jobs:
   publish-installer:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download the successful Windows build artifact
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           mkdir -p installer
-          gh run download 44676051316 --repo "${GITHUB_REPOSITORY}" --name "NITRAM-Windows-Installers" --dir installer
-          exe=$(find installer -maxdepth 2 -type f -iname "*.exe" -print -quit)
+          gh run download "$RUN_ID" --repo "${GITHUB_REPOSITORY}" --name "NITRAM-Windows-Installers" --dir installer
+          exe=$(find installer -maxdepth 3 -type f -iname "*.exe" -print -quit)
           if [ -z "$exe" ]; then
             echo "The Windows installer EXE was not found in the build artifact."
             exit 1
@@ -28,16 +30,13 @@ jobs:
           test -s "NITRAM_SUPERMARKET_POS_Windows_Setup.exe"
           ls -lh "NITRAM_SUPERMARKET_POS_Windows_Setup.exe"
 
-      - name: Publish a direct GitHub download
+      - name: Publish a permanent versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_NUMBER: ${{ github.event.workflow_run.run_number }}
         run: |
-          tag="v1.0.0-windows-build47"
-          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release upload "$tag" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe" --repo "${GITHUB_REPOSITORY}" --clobber
-          else
-            gh release create "$tag" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "NITRAM SUPERMARKET POS — Windows Installer" \
-              --notes "Windows installer built successfully by GitHub Actions build #47. Offline desktop POS with local SQLite database."
-          fi
+          tag="v1.0.1-windows-build-${BUILD_NUMBER}"
+          gh release create "$tag" "NITRAM_SUPERMARKET_POS_Windows_Setup.exe" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "NITRAM SUPERMARKET POS — Windows Installer ${BUILD_NUMBER}" \
+            --notes "Windows installer built successfully by GitHub Actions. Offline desktop POS with local SQLite database. Build run: ${BUILD_NUMBER}."
