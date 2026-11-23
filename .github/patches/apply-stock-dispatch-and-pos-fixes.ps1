@@ -11,7 +11,7 @@ $marker = 'function stockRows(items)'
 $code = @'
 function openStockDispatchImport(){document.getElementById('stockDispatchFile')?.click()}
 function openStockDispatch(){
- if(!['Owner','Admin'].includes(S.activeRole))return toast('Only Owner/Admin can dispatch stock');
+ if(S.activeRole!=='Owner')return toast('Only the Owner can dispatch stock');
  const rows=(S.products||[]).filter(p=>Number(p.stock)>0).map(p=>'<label style="display:grid;grid-template-columns:1fr 100px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eee"><span><b>'+escapeScanHtml(p.name)+'</b><small class="muted" style="display:block">'+escapeScanHtml(p.id)+' · Available '+(Number(p.stock)||0)+'</small></span><input data-dispatch-product="'+escapeScanHtml(p.id)+'" type="number" min="0" max="'+(Number(p.stock)||0)+'" step="1" value="0" style="width:100%"></label>').join('');
  document.getElementById('modal').style.display='grid';
  document.getElementById('modal').innerHTML='<div class="modalbox" style="max-width:760px;max-height:88vh;overflow:auto"><h2>Send stock to cashier</h2><p class="muted">Create an offline dispatch file. Stock is deducted from the office immediately; the cashier imports the file to receive it. Each dispatch can only be imported once.</p><label>Cashier / destination<input id="dispatchReceiver" placeholder="Cashier name or Till 1" required></label><div style="margin-top:12px">'+(rows||'<p>No stock available to dispatch.</p>')+'</div><div class="pay-actions"><button class="ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="createStockDispatch()">Create dispatch file</button></div></div>';
@@ -44,6 +44,6 @@ async function importStockDispatch(event){
 if (-not $app.Contains('function createStockDispatch()')) { if (-not $app.Contains($marker)) { throw 'Stock table insertion point missing; aborting patch.' }; $app=$app.Replace($marker,$code+[Environment]::NewLine+$marker) }
 $app = $app.Replace('variance=counted+expenses-expected,mpesaVariance=mpesaCounted-mpesaSales','variance=mpesaCounted+counted+expenses-netSales,mpesaVariance=mpesaCounted-mpesaSales')
 $app = $app.Replace('money(counted+expense-expected)','money(mpesaCounted+counted+expense-sales.reduce((n,x)=>n+net(x),0))')
-$app = $app.Replace('variance,countedCash:counted,adjustedCountedCash:counted+expenses','variance,countedCash:counted,expectedCash:counted,adjustedCountedCash:counted+expenses')
+$app = $app.Replace('expectedCash:counted,countedCash:counted,adjustedCountedCash:counted+expenses','variance,countedCash:counted,expectedCash:counted,adjustedCountedCash:counted+expenses')
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 Write-Host 'Applied offline stock dispatch and requested reconciliation formula.'
