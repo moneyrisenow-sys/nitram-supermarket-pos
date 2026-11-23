@@ -21,11 +21,10 @@ let data;
   if(file.name.toLowerCase().endsWith('.xlsx')){const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}),meta=XLSX.utils.sheet_to_json(wb.Sheets.Dispatch||wb.Sheets[wb.SheetNames[0]],{defval:''})[0]||{},items=XLSX.utils.sheet_to_json(wb.Sheets.Items||wb.Sheets[wb.SheetNames[1]],{defval:''});data={schema:'NITRAM-STOCK-DISPATCH',version:1,dispatchId:meta.dispatchId,sender:meta.sender,receiver:meta.receiver,createdAt:meta.createdAt,status:meta.status,items:items.map(x=>({productId:String(x.productId),name:x.name,barcode:x.barcode,quantity:Number(x.quantity)}))}}
   else if(file.name.toLowerCase().endsWith('.csv')){const rows=_nitramParseDelimited(await file.text().replace(/^\ufeff/,''),','),heads=(rows.shift()||[]).map(x=>x.trim()),list=rows.map(row=>Object.fromEntries(heads.map((h,i)=>[h,row[i]??''])));if(!list.length)throw new Error('Dispatch CSV has no item rows');const first=list[0];data={schema:'NITRAM-STOCK-DISPATCH',version:1,dispatchId:first.dispatch_id,sender:first.sender,receiver:first.receiver,createdAt:first.created_at,status:first.status,items:list.map(x=>({productId:String(x.product_id),name:x.name,barcode:x.barcode,quantity:Number(x.quantity)}))}}
   else{data=JSON.parse(await file.text())}
-  if(data.schema!=='NITRAM-STOCK-DISPATCH'||data.version!==1||!data.dispatchId||!Array.isArray(data.items)||!data.items.length)throw new Error('This is not a valid NITRAM dispatch file.');
 '@
-$parserPattern = "(?s)  const data=JSON[.]parse[(]await file[.]text[(][)][)];[ \r\n\t]*if[(]data[.]schema!=='NITRAM-STOCK-DISPATCH'.*?throw new Error[(]'This is not a valid NITRAM dispatch file[.]'[)];"
-$updatedApp = [regex]::Replace($app,$parserPattern,$newParse,1)
-if ($updatedApp -eq $app) { throw 'Dispatch parser block was not found for multi-format replacement.' }
+$oldParse = '  const data=JSON.parse(await file.text());'
+if (-not $app.Contains($oldParse)) { throw 'Dispatch JSON parser marker was not found.' }
+$app = $app.Replace($oldParse,$newParse)
 $app = $updatedApp
 
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
