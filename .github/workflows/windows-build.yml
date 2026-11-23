@@ -94,6 +94,9 @@ jobs:
       - name: Apply receipt, barcode and responsiveness fixes
         shell: pwsh
         run: .github/patches/apply-runtime-fixes.ps1
+      - name: Apply offline stock dispatch and reconciliation fixes
+        shell: pwsh
+        run: .github/patches/apply-stock-dispatch-and-pos-fixes.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
