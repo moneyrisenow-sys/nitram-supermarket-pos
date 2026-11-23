@@ -97,6 +97,9 @@ jobs:
       - name: Apply offline stock dispatch and reconciliation fixes
         shell: pwsh
         run: .github/patches/apply-stock-dispatch-and-pos-fixes.ps1
+      - name: Apply cashier receipt verification and acknowledgements
+        shell: pwsh
+        run: .github/patches/apply-dispatch-acknowledgement.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
