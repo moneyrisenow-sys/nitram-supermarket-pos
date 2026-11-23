@@ -18,13 +18,14 @@ async function importStockDispatch(event){
  const file=event.target.files?.[0];if(!file)return;
  try{
   const data=JSON.parse(await file.text());
-  if(data.schema==='NITRAM-STOCK-ACK'){
+  if(data.schema==='NITRAM-STOCK-ACK'){if(S.activeRole!=='Owner')throw new Error('Only the Owner can import cashier acknowledgements.');
    const record=(S.stockDispatches||[]).find(x=>x.dispatchId===data.dispatchId);
    if(!record)throw new Error('No matching dispatch exists on this Owner database.');
    if(record.acknowledgement)throw new Error('This acknowledgement has already been imported.');
    record.acknowledgement=data;record.acknowledgedAt=data.acknowledgedAt;record.status=data.discrepancies?.length?'received-with-discrepancy':'received';
    logActivity('Cashier dispatch acknowledged',data.dispatchId+' · '+record.status);save();render('stock');toast('Cashier acknowledgement recorded.');return;
   }
+  if(S.activeRole!=='Cashier')throw new Error('Only the Cashier account can receive stock dispatches.');
   if(data.schema!=='NITRAM-STOCK-DISPATCH'||data.version!==1||!data.dispatchId||!Array.isArray(data.items)||!data.items.length)throw new Error('This is not a valid NITRAM dispatch file.');
   S.stockDispatches=S.stockDispatches||[];if(S.stockDispatches.some(x=>x.dispatchId===data.dispatchId))throw new Error('This dispatch has already been imported.');
   const prepared=data.items.map(x=>{const p=prod(String(x.productId));const q=Number(x.quantity);if(!p||!Number.isInteger(q)||q<=0)throw new Error('Invalid product or quantity in dispatch: '+(x.productId||''));return {p,q,item:x}});
