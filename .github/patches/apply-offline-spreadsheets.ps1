@@ -51,6 +51,7 @@ async function importPortableBackup(event,kind){
 }
 '@
 $app = [regex]::Replace($app,'(?s)function importPortableBackup\(event,kind\)\{.*?(?=function downloadCSV\()', [System.Text.RegularExpressions.MatchEvaluator]{param($m)$importFn+[Environment]::NewLine},1)
+$app = $app.Replace('<option value=json>JSON</option>','<option value=json>JSON</option><option value=xlsx>Excel (.xlsx)</option>')
 if (-not $app.Contains("file.name.toLowerCase().endsWith('.xlsx')")) { throw 'Excel import support was not inserted.' }
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 node --check $appPath
