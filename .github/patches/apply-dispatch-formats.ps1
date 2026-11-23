@@ -23,7 +23,7 @@ let data;
   else{data=JSON.parse(await file.text())}
   if(data.schema!=='NITRAM-STOCK-DISPATCH'||data.version!==1||!data.dispatchId||!Array.isArray(data.items)||!data.items.length)throw new Error('This is not a valid NITRAM dispatch file.');
 '@
-$parserPattern = "(?s)  const data=JSON.parse\(await file\.text\(\)\);\s*if\(data\.schema!=='NITRAM-STOCK-DISPATCH'.*?throw new Error\('This is not a valid NITRAM dispatch file\.'\);"
+$parserPattern = "(?s)  const data=JSON[.]parse[(]await file[.]text[(][)][)];[ \r\n\t]*if[(]data[.]schema!=='NITRAM-STOCK-DISPATCH'.*?throw new Error[(]'This is not a valid NITRAM dispatch file[.]'[)][)];"
 $updatedApp = [regex]::Replace($app,$parserPattern,$newParse,1)
 if ($updatedApp -eq $app) { throw 'Dispatch parser block was not found for multi-format replacement.' }
 $app = $updatedApp
