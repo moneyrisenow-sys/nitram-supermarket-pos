@@ -100,6 +100,9 @@ jobs:
       - name: Apply cashier receipt verification and acknowledgements
         shell: pwsh
         run: .github/patches/apply-dispatch-acknowledgement.ps1
+      - name: Add offline Excel import and export support
+        shell: pwsh
+        run: .github/patches/apply-offline-spreadsheets.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
