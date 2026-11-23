@@ -25,7 +25,6 @@ let data;
 $oldParse = '  const data=JSON.parse(await file.text());'
 if (-not $app.Contains($oldParse)) { throw 'Dispatch JSON parser marker was not found.' }
 $app = $app.Replace($oldParse,$newParse)
-$app = $updatedApp
 
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 node --check $appPath
