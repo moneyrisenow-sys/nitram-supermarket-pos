@@ -43,6 +43,9 @@ async function importStockDispatch(event){
 '@
 if (-not $app.Contains('function createStockDispatch()')) { if (-not $app.Contains($marker)) { throw 'Stock table insertion point missing; aborting patch.' }; $app=$app.Replace($marker,$code+[Environment]::NewLine+$marker) }
 $app = $app.Replace('variance=counted+expenses-expected,mpesaVariance=mpesaCounted-mpesaSales','variance=mpesaCounted+counted+expenses-netSales,mpesaVariance=mpesaCounted-mpesaSales')
+# The existing runtime patch rewrites the same formula before this patch runs.
+$app = $app.Replace('variance=counted+expenses+cashOut+mpesaCounted-Number(sh.openingFloat||0)-netSales','variance=mpesaCounted+counted+expenses-netSales')
+$app = $app.Replace('money(counted+expense+cashOut+mpesaCounted-Number(sh.openingFloat||0)-totalSales)','money(mpesaCounted+counted+expense-totalSales)')
 $app = $app.Replace('money(counted+expense-expected)','money(mpesaCounted+counted+expense-sales.reduce((n,x)=>n+net(x),0))')
 $app = $app.Replace('expectedCash:expected,countedCash:counted','expectedCash:counted,countedCash:counted')
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
