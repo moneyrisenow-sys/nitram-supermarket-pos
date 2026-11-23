@@ -42,8 +42,8 @@ async function importStockDispatch(event){
 }
 '@
 if (-not $app.Contains('function createStockDispatch()')) { if (-not $app.Contains($marker)) { throw 'Stock table insertion point missing; aborting patch.' }; $app=$app.Replace($marker,$code+[Environment]::NewLine+$marker) }
-$app = $app.Replace('variance=counted+expenses-expected,mpesaVariance=mpesaCounted-mpesaSales','variance=mpesaSales+counted+expenses-netSales,mpesaVariance=mpesaCounted-mpesaSales')
-$app = $app.Replace('money(counted+expense-expected)','money(mpesaSales+counted+expense-sales.reduce((n,x)=>n+net(x),0))')
+$app = $app.Replace('variance=counted+expenses-expected,mpesaVariance=mpesaCounted-mpesaSales','variance=mpesaCounted+counted+expenses-netSales,mpesaVariance=mpesaCounted-mpesaSales')
+$app = $app.Replace('money(counted+expense-expected)','money(mpesaCounted+counted+expense-sales.reduce((n,x)=>n+net(x),0))')
 $app = $app.Replace('variance,countedCash:counted,adjustedCountedCash:counted+expenses','variance,countedCash:counted,expectedCash:counted,adjustedCountedCash:counted+expenses')
 Set-Content -LiteralPath $appPath -Value $app -NoNewline -Encoding utf8
 Write-Host 'Applied offline stock dispatch and requested reconciliation formula.'
