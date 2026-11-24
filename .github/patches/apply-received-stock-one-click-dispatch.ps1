@@ -15,7 +15,7 @@ if ($app.Contains($oldButton)) {
 
 $code = @'
 function _nitramReceiveLedger(){
- const candidates=[S.stockMovements,S.stockHistory,S.movements,S.stockTransactions,S.inventoryMovements];
+ const candidates=[S.stockAdjustments,S.stockMovements,S.stockHistory,S.movements,S.stockTransactions,S.inventoryMovements];
  for(const list of candidates){if(Array.isArray(list)&&list.length)return list}
  return [];
 }
@@ -25,7 +25,7 @@ function _nitramReceiveKey(m,index){
  if(explicit!==null)return String(explicit);
  const stamp=_nitramReceiveField(m,['createdAt','timestamp','date','time','created_at'])||'';
  const pid=_nitramReceiveField(m,['productId','product_id','product','idProduct','itemId','barcode'])||'';
- const qty=_nitramReceiveField(m,['quantity','qty','amount','units','change','quantityIn'])||'';
+ const qty=_nitramReceiveField(m,['delta','quantity','qty','amount','units','change','quantityIn'])||'';
  return 'receive-'+String(stamp)+'-'+String(pid)+'-'+String(qty)+'-'+index;
 }
 function _nitramReceivedMovements(){
@@ -33,8 +33,9 @@ function _nitramReceivedMovements(){
  ledger.forEach((m,i)=>{
   const type=String(_nitramReceiveField(m,['type','action','movementType','transactionType','kind','operation','reason'])||'').toLowerCase();
   if(!/(receive|received|goods in|stock in|purchase|supplier receipt)/.test(type))return;
+  if(m&&m.delta!==undefined&&Number(m.delta)<=0)return;
   const productId=String(_nitramReceiveField(m,['productId','product_id','product','idProduct','itemId','barcode'])||'');
-  const rawQty=_nitramReceiveField(m,['quantity','qty','amount','units','quantityIn','receivedQty']);
+  const rawQty=_nitramReceiveField(m,['delta','quantity','qty','amount','units','quantityIn','receivedQty']);
   const qty=Math.abs(Number(rawQty));
   if(!productId||!Number.isFinite(qty)||qty<=0)return;
   const p=prod(productId)||((S.products||[]).find(x=>String(x.barcode||'')===productId));
