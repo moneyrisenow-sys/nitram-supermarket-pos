@@ -1,7 +1,7 @@
 name: Validate NITRAM build patches
 on:
   push:
-    branches: [build/stock-dispatch-and-pos-fixes]
+    branches: [build/stock-dispatch-and-pos-fixes, build/one-click-received-stock-dispatch]
     paths:
       - ".github/patches/**"
       - ".github/workflows/windows-build.yml"
@@ -50,6 +50,7 @@ jobs:
           .github/patches/apply-dispatch-acknowledgement.ps1
           .github/patches/apply-offline-spreadsheets.ps1
           .github/patches/apply-dispatch-formats.ps1
+          .github/patches/apply-received-stock-one-click-dispatch.ps1
 
       - name: Validate patched JavaScript and required features
         shell: pwsh
@@ -60,6 +61,9 @@ jobs:
           $appContent = [System.IO.File]::ReadAllText($app)
           if ((Get-Item -LiteralPath $app).Length -lt 100000) { throw "Patched app.js is unexpectedly small or empty." }
           $required = @(
+            "function dispatchNewlyReceivedStock()",
+            "function _nitramReceivedMovements()",
+            "source:'newly-received-stock'",
             "function createStockDispatch()",
             "function confirmStockDispatchReceipt()",
             "NITRAM-STOCK-ACK",
