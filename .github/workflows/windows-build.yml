@@ -106,6 +106,9 @@ jobs:
       - name: Add multi-format stock dispatch files
         shell: pwsh
         run: .github/patches/apply-dispatch-formats.ps1
+      - name: Dispatch only newly received stock in one click
+        shell: pwsh
+        run: .github/patches/apply-received-stock-one-click-dispatch.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
