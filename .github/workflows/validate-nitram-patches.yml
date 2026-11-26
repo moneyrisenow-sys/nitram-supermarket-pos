@@ -1,7 +1,7 @@
 name: Validate NITRAM build patches
 on:
   push:
-    branches: [build/stock-dispatch-and-pos-fixes, build/one-click-received-stock-dispatch]
+    branches: [build/stock-dispatch-and-pos-fixes, build/one-click-received-stock-dispatch, fix/dedicated-dispatch-tab]
     paths:
       - ".github/patches/**"
       - ".github/workflows/windows-build.yml"
@@ -60,6 +60,7 @@ jobs:
           .github/patches/apply-offline-spreadsheets.ps1
           .github/patches/apply-dispatch-formats.ps1
           .github/patches/apply-received-stock-one-click-dispatch.ps1
+          .github/patches/apply-dedicated-dispatch-tab.ps1
 
       - name: Validate patched JavaScript and required features
         shell: pwsh
@@ -71,6 +72,9 @@ jobs:
           if ((Get-Item -LiteralPath $app).Length -lt 100000) { throw "Patched app.js is unexpectedly small or empty." }
           $required = @(
             "function dispatchNewlyReceivedStock()",
+            "function dispatch()",
+            "dispatch:()=>dispatch()",
+            "'Dispatch':'dispatch'",
             "function _nitramReceivedMovements()",
             "source:'newly-received-stock'",
             "function createStockDispatch()",
@@ -88,4 +92,6 @@ jobs:
           }
           $html = Get-Content -LiteralPath (Join-Path (Split-Path $app -Parent) "index.html") -Raw
           if (-not $html.Contains("xlsx.full.min.js")) { throw "Offline Excel library is not wired into the app." }
+          if (-not $html.Contains('title="Dispatch"')) { throw "Dedicated Dispatch tab is missing from the desktop navigation." }
+          if ($appContent.Contains('onclick="dispatchNewlyReceivedStock()"') -and $appContent.Contains('title="Stock"')) { throw "Dispatch action leaked into the Stock tab instead of the dedicated Dispatch page." }
           Write-Host "All patch application and JavaScript syntax checks passed. app.js bytes: $((Get-Item -LiteralPath $app).Length)"
