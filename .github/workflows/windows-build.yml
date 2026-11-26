@@ -109,6 +109,9 @@ jobs:
       - name: Dispatch only newly received stock in one click
         shell: pwsh
         run: .github/patches/apply-received-stock-one-click-dispatch.ps1
+      - name: Add dedicated Dispatch tab and role-specific workflows
+        shell: pwsh
+        run: .github/patches/apply-dedicated-dispatch-tab.ps1
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
